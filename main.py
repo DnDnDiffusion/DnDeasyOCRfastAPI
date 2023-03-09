@@ -6,16 +6,31 @@ import re
 from fastapi import FastAPI, APIRouter, Request, File, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 import easyocr
+from fastapi.middleware.cors import CORSMiddleware
 
 import PIL
 from PIL import Image, ImageOps
 import numpy
+import json
+
+
+
 
 app = FastAPI()
 router = APIRouter()
 ocr = easyocr.Reader(["en"])
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # look through the ocrtext and return the class and level
 def class_level(ocrtext):
@@ -48,7 +63,7 @@ def background(ocrtext):
 
 # look through the text and return what Armor is Worn
 def armor_worn(ocrtext):
-    pattern = r"Armor:\s*(\w+)"
+    pattern = r"Armor Worn:\s*(\w+)"
     # Search for the pattern in the string
     match = re.search(pattern, ocrtext)
     # Extract the matched substring
@@ -87,20 +102,17 @@ async def root():
 @app.post("/ocr")
 async def do_ocr(request: Request, file: UploadFile = File(...)):
     if file is not None:
-        # res = ocr.readtext(await file.read())
-        # res = ocr.readtext(file.file)
-        # via pil
-        imgFile = numpy.array(PIL.Image.open(file.file).convert("RGB"))
-        res = ocr.readtext(imgFile)
-        ocrtext = str(res)
-        # return array of strings
-        return [ocrtext, dragonborn_colour(ocrtext),class_level(ocrtext),background(ocrtext),armor_worn(ocrtext), weapon(ocrtext), mood_and_tone(ocrtext)]
-        # probable_text = "\n".join((item[1] for item in res))
-        # return StreamingResponse(
-        #     io.BytesIO(probable_text.encode()), media_type="text/plain"
-        # )
-
-    return {"error": "missing file"}
+        try:
+            imgFile = numpy.array(PIL.Image.open(file.file).convert("RGB"))
+            res = ocr.readtext(imgFile)
+            ocrtext = str(res)
+            result = {"ocrtext": ocrtext,"dragonborn_colour": dragonborn_colour(ocrtext),"class_level": class_level(ocrtext),"background": background(ocrtext),"armor_worn": armor_worn(ocrtext),"weapon": weapon(ocrtext),"mood_and_tone": mood_and_tone(ocrtext)}
+            return json.dumps(result)
+        except Exception as e:
+            print(e)
+            return {"error": "OCR failed."}
+    else:
+        return {"error": "missing file"}
 
 
 app.include_router(router)
